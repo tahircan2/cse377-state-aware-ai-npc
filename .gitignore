@@ -1,0 +1,34 @@
+# Unity generated
+UnityProject/[Ll]ibrary/
+UnityProject/[Tt]emp/
+UnityProject/[Oo]bj/
+UnityProject/[Bb]uild/
+UnityProject/[Bb]uilds/
+UnityProject/[Ll]ogs/
+UnityProject/[Uu]ser[Ss]ettings/
+UnityProject/*.csproj
+UnityProject/*.sln
+UnityProject/*.slnx
+UnityProject/.vs/
+UnityProject/.vscode/
+UnityProject/.idea/
+
+# Runtime output
+UnityProject/decisions.log
+UnityProject/smoke_test.txt
+*.log
+ai/state.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Submission archives (contain personal info)
+*.zip
+
+# OS
+Thumbs.db
+.DS_Store

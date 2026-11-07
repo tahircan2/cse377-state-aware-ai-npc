@@ -1,0 +1,6 @@
+* text=auto
+*.cs diff=csharp
+*.unity text eol=lf linguist-generated
+*.mat text eol=lf linguist-generated
+*.asset text eol=lf linguist-generated
+*.meta text eol=lf linguist-generated

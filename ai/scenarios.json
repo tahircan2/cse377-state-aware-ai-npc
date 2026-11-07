@@ -1,0 +1,32 @@
+{
+  "A": {
+    "stateVersion": 1,
+    "npc": {"npcId": "guard_01", "health": 90, "ammo": 10, "maxAmmo": 10, "enemyDistance": 5, "enemyCount": 1, "nearbyAllies": 1, "alliesCallable": 3, "coverAvailable": true, "currentAction": "HOLD_POSITION"},
+    "legalActions": ["ATTACK", "TAKE_COVER", "RETREAT", "CALL_FOR_HELP", "HOLD_POSITION"],
+    "environment": {"nearestCoverDistance": 3.5, "isUnderFire": true, "weaponRange": 20, "enemyWeaponRange": 10}
+  },
+  "B": {
+    "stateVersion": 1,
+    "npc": {"npcId": "guard_01", "health": 15, "ammo": 7, "maxAmmo": 10, "enemyDistance": 4, "enemyCount": 2, "nearbyAllies": 0, "alliesCallable": 3, "coverAvailable": true, "currentAction": "HOLD_POSITION"},
+    "legalActions": ["ATTACK", "TAKE_COVER", "RETREAT", "CALL_FOR_HELP", "RELOAD", "HOLD_POSITION"],
+    "environment": {"nearestCoverDistance": 3.5, "isUnderFire": true, "weaponRange": 20, "enemyWeaponRange": 10}
+  },
+  "C": {
+    "stateVersion": 1,
+    "npc": {"npcId": "guard_01", "health": 70, "ammo": 0, "maxAmmo": 10, "enemyDistance": 7, "enemyCount": 1, "nearbyAllies": 2, "alliesCallable": 3, "coverAvailable": true, "currentAction": "HOLD_POSITION"},
+    "legalActions": ["TAKE_COVER", "RETREAT", "CALL_FOR_HELP", "RELOAD", "HOLD_POSITION"],
+    "environment": {"nearestCoverDistance": 3.5, "isUnderFire": true, "weaponRange": 20, "enemyWeaponRange": 10}
+  },
+  "D": {
+    "stateVersion": 1,
+    "npc": {"npcId": "guard_01", "health": 40, "ammo": 6, "maxAmmo": 10, "enemyDistance": 8, "enemyCount": 4, "nearbyAllies": 0, "alliesCallable": 3, "coverAvailable": false, "currentAction": "HOLD_POSITION"},
+    "legalActions": ["ATTACK", "RETREAT", "CALL_FOR_HELP", "RELOAD", "HOLD_POSITION"],
+    "environment": {"nearestCoverDistance": -1, "isUnderFire": true, "weaponRange": 20, "enemyWeaponRange": 10}
+  },
+  "E": {
+    "stateVersion": 1,
+    "npc": {"npcId": "guard_01", "health": 55, "ammo": 4, "maxAmmo": 10, "enemyDistance": 12, "enemyCount": 2, "nearbyAllies": 3, "alliesCallable": 3, "coverAvailable": true, "currentAction": "HOLD_POSITION"},
+    "legalActions": ["ATTACK", "TAKE_COVER", "RETREAT", "CALL_FOR_HELP", "RELOAD", "HOLD_POSITION"],
+    "environment": {"nearestCoverDistance": 3.5, "isUnderFire": false, "weaponRange": 20, "enemyWeaponRange": 10}
+  }
+}
