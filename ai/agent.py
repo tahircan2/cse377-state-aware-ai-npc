@@ -265,7 +265,10 @@ async def decide_endpoint(req: dict):
                 model_ready = False
                 ensure_warm()
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=503)
-    return {"stateVersion": req["stateVersion"], **d}
+    result = {"stateVersion": req["stateVersion"], **d}
+    print(f"[decision] v{req['stateVersion']} {req['objective']['role']}  legal={req['legalActions']}\n"
+          f"           MCP tools called: {', '.join(d['toolsCalled'])}\n           JSON: {json.dumps(result)}")
+    return result
 
 
 # ---------- terminal test without Unity ----------

@@ -168,7 +168,7 @@ public class NpcBrain : MonoBehaviour
         var s = guard.GetState();
         string status = guard.IsDead ? "DEAD (load a scenario)" : s.enemyCount == 0 ? "no enemy in sight - waiting" : pending ? "AI thinking..." : "";
         GUI.Box(new Rect(10, 10, 820, 150),
-            $"{s.npcId} [{guard.Objective.role}]   HP {s.health}   Ammo {s.ammo}/{s.maxAmmo}   Enemies {(s.enemyCount > 0 ? $"{s.enemyCount} @ {s.enemyDistance} m" : "0")}   Allies {s.nearbyAllies}   Cover {(s.coverAvailable ? "yes" : "no")}\n" +
+            $"{s.npcId} [{guard.Objective.role}]   stateVersion {guard.StateVersion}   HP {s.health}   Ammo {s.ammo}/{s.maxAmmo}   Enemies {(s.enemyCount > 0 ? $"{s.enemyCount} @ {s.enemyDistance} m" : "0")}   Allies {s.nearbyAllies}   Cover {(s.coverAvailable ? "yes" : "no")}\n" +
             $"<b>Legal now:</b> {string.Join(", ", Generate(s))}\n" +
             $"<b>MCP tools (last decision):</b> {lastTools}\n" +
             $"Current action: {guard.CurrentAction}   {status}   <i>{aiStatus}</i>\n{lastDecision}", hud);
