@@ -34,8 +34,9 @@ def get_legal_actions() -> list[str]:
 
 @mcp.tool()
 def get_environment_context() -> dict:
-    """Returns tactical context: distance to the nearest cover in metres (-1 if none), whether the NPC was
-    hit in the last 3 seconds, the NPC's weapon range and the enemies' weapon range in metres."""
+    """Returns tactical context: distance to the nearest cover in metres (-1 if none), whether the NPC is
+    already behind cover that blocks the nearest enemy, whether it was hit in the last 3 seconds, and the
+    NPC's and the enemies' weapon ranges in metres."""
     return load()["environment"]
 
 

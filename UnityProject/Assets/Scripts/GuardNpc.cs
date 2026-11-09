@@ -58,6 +58,7 @@ public class GuardNpc : MonoBehaviour
         {
             nearestCoverDistance = cover ? Round1(Dist(cover)) : -1,
             isUnderFire = Time.time - lastHit < 3,
+            inCover = enemy && CoverBetween(enemy.transform.position),
             weaponRange = attackRange,
             enemyWeaponRange = enemy ? enemy.fireRange : -1,
         };
@@ -118,10 +119,16 @@ public class GuardNpc : MonoBehaviour
         StateVersion++;   // a decision made for the old role is stale
     }
 
+    // Right next to a cover object that is between the guard and the given position.
+    bool CoverBetween(Vector3 from)
+    {
+        var c = NearestCover();
+        return c && Dist(c) < 1.6f && Vector3.Dot(c.position - transform.position, from - transform.position) > 0;
+    }
+
     public void TakeDamage(float dmg, Vector3 from)
     {
-        var c = NearestCover();   // cover between the guard and the shooter blocks the shot
-        if (c && Dist(c) < 1.6f && Vector3.Dot(c.position - transform.position, from - transform.position) > 0) return;
+        if (CoverBetween(from)) return;   // cover between the guard and the shooter blocks the shot
         health = Mathf.Max(0, health - dmg);
         lastHit = Time.time;
     }

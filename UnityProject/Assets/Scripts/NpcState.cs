@@ -21,6 +21,7 @@ public class EnvironmentContext
 {
     public double nearestCoverDistance;   // -1 when no cover is in range
     public bool isUnderFire;
+    public bool inCover;                  // already behind cover that blocks the nearest enemy's shots
     public double weaponRange;            // how far the NPC can shoot
     public double enemyWeaponRange;       // how far the enemies can shoot (-1 when no enemy is visible)
 }

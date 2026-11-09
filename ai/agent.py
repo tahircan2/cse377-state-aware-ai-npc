@@ -95,10 +95,16 @@ def contradictions(reason: str, npc: dict, env: dict) -> list[str]:
             found.append(f"the enemy is {d:g} m away and you can shoot {env['weaponRange']:g} m, so the enemy IS inside your range")
     if hp >= 50 and said(r"low health", r"critical health", r"health is low", r"badly hurt"):
         found.append(f"health is {hp:g}/100, not low")
-    if n <= 1 + npc["nearbyAllies"] and said(r"outnumbered"):
+    # "outnumbered by allies" is a wording slip for "we outnumber them", not a wrong belief
+    if n <= 1 + npc["nearbyAllies"] and said(r"outnumbered(?! by (my |our |the |\d+ )?all)"):
         found.append(f"{n} enemies vs you + {npc['nearbyAllies']} nearby allies, so you are not outnumbered")
-    if npc["coverAvailable"] and said(r"no cover"):
-        found.append("cover is available")
+    in_cover = env.get("inCover", False)
+    if npc["coverAvailable"] and said(r"no cover (is )?(available|nearby|in reach|within reach)", r"there is no cover", r"without any cover"):
+        found.append(f"cover is available {env['nearestCoverDistance']:g} m away")
+    if in_cover and said(r"not in cover", r"under no cover", r"not behind cover", r"exposed", r"in the open", r"no cover"):
+        found.append("you are already IN cover that blocks the nearest enemy")
+    if not in_cover and said(r"already in cover", r"already behind cover", r"(?<!not )in cover now"):
+        found.append("you are NOT in cover yet")
     if not env["isUnderFire"] and said(r"under fire", r"taking fire", r"being shot"):
         found.append("you are not under fire")
     return found
@@ -118,7 +124,9 @@ def fact_sheet(obj: dict, npc: dict, env: dict) -> str:
                   f"Force balance: you + {npc['nearbyAllies']} nearby allies = {team} vs {n} enemies "
                   f"({'you are outnumbered' if n > team else 'even' if n == team else 'you have more'})"]
     lines += [f"Allies within 10 m: {npc['nearbyAllies']}; allies that can still be called: {npc['alliesCallable']}",
-              f"Cover: {'available, ' + format(env['nearestCoverDistance'], 'g') + ' m away' if npc['coverAvailable'] else 'none within reach'}",
+              "Cover: " + ("you are IN cover, it blocks the nearest enemy's shots" if env.get("inCover") else
+                           f"available {env['nearestCoverDistance']:g} m away, but you are NOT in cover yet" if npc["coverAvailable"] else
+                           "none within reach"),
               f"Under fire right now: {'yes' if env['isUnderFire'] else 'no'}",
               f"Current action: {npc['currentAction']}"]
     return "\n".join(lines)
@@ -282,6 +290,11 @@ async def run_scenarios(args: list[str]):
         "ammo is 10/10, not low", "1 enemies vs you + 1 nearby allies, so you are not outnumbered"]
     assert contradictions("Not outnumbered, healthy and under fire.", a["npc"], a["environment"]) == []
     assert len(contradictions("I am inside the enemy's range while they are outside mine.", a["npc"], a["environment"])) == 1
+    in_cover = {**a["environment"], "inCover": True}
+    assert contradictions("You are currently under no cover despite having it available.", a["npc"], in_cover) == [
+        "you are already IN cover that blocks the nearest enemy"]
+    assert contradictions("You are not in cover yet, so move to it.", a["npc"], a["environment"]) == []
+    assert contradictions("Full ammo and outnumbered by allies.", a["npc"], a["environment"]) == []
     e = scenarios["E"]   # enemy at 12 m, enemy range 10 m
     assert len(contradictions("Outside enemy range while inside theirs.", e["npc"], e["environment"])) == 1
     async with mcp_session() as s:
