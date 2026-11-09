@@ -25,14 +25,17 @@ public class NpcBrain : MonoBehaviour
     string aiStatus = "AI: connecting...";
     float lastRequest = -99;
     int lastVersion = -1;
-    string lastDecision = "", lastTools = "-";
+    string lastTools = "-", lastAction = "-", lastValidation = "-", lastExecuted = "-", lastReason = "";
+    float lastConfidence;
+    int lastLatency;
     string logPath;
-    GUIStyle hud;
 
     void Awake()
     {
         guard = GetComponent<GuardNpc>();
-        Application.targetFrameRate = 60;   // an uncapped frame rate steals the GPU from the local LLM
+        // The game and the local LLM share one laptop GPU: rendering fewer frames leaves it free for the model.
+        QualitySettings.vSyncCount = 0;     // otherwise targetFrameRate is ignored
+        Application.targetFrameRate = 30;
         System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;   // "0.95", not "0,95"
         logPath = Path.Combine(Application.dataPath, "..", "decisions.log");
     }
@@ -159,18 +162,56 @@ public class NpcBrain : MonoBehaviour
         Debug.Log(entry);
         File.AppendAllText(logPath, entry + "\n");
         if (d != null) lastTools = tools;
-        lastDecision = $"Last decision: {(d == null ? "-" : $"{d.action} ({d.confidence:0.00})")}  {validation}  {latency} ms  ->  executed {executed}\n{d?.reason}";
+        (lastAction, lastConfidence, lastReason) = d == null ? ("-", 0f, "") : (d.action, d.confidence, d.reason);
+        (lastValidation, lastLatency, lastExecuted) = (validation, latency, executed);
     }
 
+    // ---------- HUD: guard state on the left, AI decision on the right ----------
     void OnGUI()
     {
-        hud ??= new GUIStyle(GUI.skin.box) { fontSize = 15, alignment = TextAnchor.UpperLeft, wordWrap = true, normal = { textColor = Color.white }, richText = true };
+        GUI.depth = 0;   // above the unit tags
+        Hud.Begin();
+        var size = Hud.Size;
+        float w = Mathf.Min(440, size.x / 2 - 15);
         var s = guard.GetState();
-        string status = guard.IsDead ? "DEAD (load a scenario)" : s.enemyCount == 0 ? "no enemy in sight - waiting" : pending ? "AI thinking..." : "";
-        GUI.Box(new Rect(10, 10, 820, 150),
-            $"{s.npcId} [{guard.Objective.role}]   stateVersion {guard.StateVersion}   HP {s.health}   Ammo {s.ammo}/{s.maxAmmo}   Enemies {(s.enemyCount > 0 ? $"{s.enemyCount} @ {s.enemyDistance} m" : "0")}   Allies {s.nearbyAllies}   Cover {(s.coverAvailable ? "yes" : "no")}\n" +
-            $"<b>Legal now:</b> {string.Join(", ", Generate(s))}\n" +
-            $"<b>MCP tools (last decision):</b> {lastTools}\n" +
-            $"Current action: {guard.CurrentAction}   {status}   <i>{aiStatus}</i>\n{lastDecision}", hud);
+        var env = guard.GetEnvironment();
+
+        GUILayout.BeginArea(new Rect(10, 10, w, size.y - 110));
+        GUILayout.BeginVertical(Hud.Panel);
+        GUILayout.Label($"GUARD  ·  {s.npcId}  ·  {guard.Objective.role}", Hud.Title);
+        Hud.Space();
+        Row("Health", $"{s.health:0} / 100", s.health < 25 ? "ff5555" : s.health < 50 ? "ffb347" : "7CFC7C");
+        Row("Ammo", $"{s.ammo} / {s.maxAmmo}", s.ammo == 0 ? "ff5555" : "ffffff");
+        Row("Enemies", s.enemyCount > 0 ? $"{s.enemyCount}  (nearest {s.enemyDistance} m)" : "none in sight");
+        Row("Allies", $"{s.nearbyAllies} nearby, {s.alliesCallable} can be called");
+        Row("Cover", s.coverAvailable ? $"yes ({env.nearestCoverDistance} m)" : "no");
+        Row("Under fire", env.isUnderFire ? "yes" : "no", env.isUnderFire ? "ff5555" : "ffffff");
+        Hud.Space();
+        Row("Current action", $"<b>{guard.CurrentAction}</b>", "ffd24d");
+        Row("stateVersion", guard.StateVersion.ToString());
+        if (guard.IsDead) GUILayout.Label(Hud.Paint("DEAD - load a scenario", "ff5555"), Hud.Text);
+        else if (s.enemyCount == 0) GUILayout.Label(Hud.Paint("No enemy in sight - waiting", "aaaaaa"), Hud.Small);
+        GUILayout.EndVertical();
+        GUILayout.EndArea();
+
+        GUILayout.BeginArea(new Rect(size.x - w - 10, 10, w, size.y - 110));
+        GUILayout.BeginVertical(Hud.Panel);
+        GUILayout.Label("AI DECISION", Hud.Title);
+        string ai = pending ? Hud.Paint("thinking...", "ffd24d") : aiReady ? Hud.Paint(aiStatus, "7CFC7C") : Hud.Paint(aiStatus, "ff7777");
+        GUILayout.Label(ai, Hud.Small);
+        Hud.Space();
+        Row("Legal now", string.Join(", ", Generate(s)), "8fd3ff");
+        Row("MCP tools", lastTools == "" ? "-" : lastTools.Replace("get_", ""));
+        Hud.Space();
+        Row("Decision", lastAction == "-" ? "-" : $"<b>{lastAction}</b>  ({lastConfidence:0.00})", "ffd24d");
+        Row("Validation", lastValidation, lastValidation.StartsWith("PASS") ? "7CFC7C" : "ff9966");
+        Row("Executed", lastExecuted);
+        Row("Latency", $"{lastLatency} ms");
+        if (lastReason != "") GUILayout.Label($"<i>\"{lastReason}\"</i>", Hud.Small);
+        GUILayout.EndVertical();
+        GUILayout.EndArea();
     }
+
+    static void Row(string name, string value, string hex = "ffffff") =>
+        GUILayout.Label($"{Hud.Paint(name, "9aa5b1")}   {Hud.Paint(value, hex)}", Hud.Text);
 }

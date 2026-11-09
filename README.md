@@ -66,6 +66,7 @@ flowchart TD
 - **Never blocks the game:** asynchronous requests, 8 s timeout, deterministic fallback; the game stays playable with the AI offline.
 - **AI health check:** Unity polls `GET /health`; while the model is not loaded the guard plays on the fallback, and the agent reloads the model by itself after Ollama restarts.
 - **Live play:** move the Player with **WASD**; walking into or out of the enemies' weapon range triggers a new decision.
+- **Readable on a projector:** scaled HUD panels (guard state left, AI decision right, scenario bar at the bottom) and a name tag above every unit.
 - **Evidence on screen:** the HUD shows the current legal actions, the MCP tools used for the last decision and the AI status; the log also stores the raw JSON answer.
 - **Event-driven timing:** decisions on significant state changes or every 3 s, never every frame.
 - **Full decision log:** time, NPC, state, legal actions, MCP tools called, decision, confidence, reason, latency, validation result, executed action.
@@ -138,6 +139,7 @@ If the agent or Ollama is not running, the guard keeps playing on its determinis
         │   ├── NpcBrain.cs              # timing, request, validation, stale check, fallback, logging, HUD
         │   ├── Enemy.cs                 # enemies (and the player) that shoot the guard
         │   ├── PlayerController.cs      # WASD movement for the Player capsule
+        │   ├── Hud.cs                   # shared HUD scale and styles
         │   └── ScenarioLoader.cs        # Scenario A-E and role buttons
         ├── Editor/
         │   ├── SceneBuilder.cs          # builds NpcScene from primitives
@@ -240,6 +242,10 @@ is one of the brief's reasonable examples.
 | qwen2.5:3b | 6/12 | ~3 s | never chose RETREAT/CALL_FOR_HELP in D |
 | llama3.2:3b, qwen3:4b, bonsai-2:4b | <= 6/12 | 3-13 s | looped on or skipped tool calls, or always TAKE_COVER |
 | **bonsai-2:9b** | **12/12** | **~3 s** | ternary weights, 2.8 GB, all layers on the GPU |
+
+**Laptops with two GPUs:** the Unity Editor and the model compete for the same 4 GB card in Play mode, which can
+push decisions past the timeout. Set `Unity.exe` to the integrated GPU (Windows Settings > System > Display >
+Graphics > Unity > Power saving) so the dedicated GPU is left to Ollama.
 
 With 8 GB of VRAM or more the brief's baseline works as well:
 
