@@ -61,6 +61,15 @@ public static class PlayModeSmokeTest
                     yield return Play($"Scenario {"ABCDE"[s]} / {GuardNpc.Roles[r].role}", guard, 9);
                 }
 
+            // Live change without the buttons: the player walks from 12 m into the enemies' 10 m weapon range.
+            if (!guard.enemies[0].GetComponent<PlayerController>()) problems.Add("Player has no PlayerController");
+            guard.SetRole(0);
+            loader.Load(4);
+            yield return Play("Scenario E / Guard, player at 12 m", guard, 6);
+            var player = guard.enemies[0].transform;
+            player.position = guard.transform.position + (player.position - guard.transform.position).normalized * 6;
+            yield return Play("Player moved to 6 m (stand-in for WASD)", guard, 8);
+
             brain.agentUrl = "http://127.0.0.1:8999/decide";   // nothing listens here: the AI is "down"
             guard.SetRole(0);
             loader.Load(3);

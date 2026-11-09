@@ -24,7 +24,7 @@ HERE = Path(__file__).parent
 STATE_FILE = HERE / "state.json"
 # The decision is never made without these; if the model skips one, the agent fetches it itself.
 REQUIRED_TOOLS = ("get_npc_objective", "get_npc_state", "get_legal_actions", "get_environment_context")
-DECISION_TIMEOUT = 4.8   # seconds; just under Unity's 5 s timeout, so the agent never keeps working for a request Unity dropped
+DECISION_TIMEOUT = 7.8   # seconds; just under Unity's 8 s timeout, so the agent never keeps working for a request Unity dropped
 
 SYSTEM = (
     "You are the tactical decision module of one NPC in a shooter game. The game executes the single action "
@@ -204,6 +204,25 @@ async def decide(s: ClientSession) -> dict:
 # ---------- HTTP server for Unity ----------
 session: ClientSession | None = None
 lock = asyncio.Lock()   # state.json is shared, so decisions are made one at a time
+model_ready = False     # model loaded in Ollama and answering; reported by GET /health
+warming: asyncio.Task | None = None
+
+
+async def warm_up():
+    """Loads the model into memory so the next decision is not slow (also after Ollama was restarted)."""
+    global model_ready
+    try:
+        await llm.generate(model=MODEL, prompt="", options=LOAD_OPTS, keep_alive="1h")
+        model_ready = True
+    except Exception as e:
+        model_ready = False
+        print(f"WARNING: Ollama not reachable ({type(e).__name__}: {e}). Unity uses its fallback meanwhile.")
+
+
+def ensure_warm():
+    global warming
+    if not model_ready and (warming is None or warming.done()):
+        warming = asyncio.create_task(warm_up())
 
 
 @asynccontextmanager
@@ -211,18 +230,29 @@ async def lifespan(_app):
     global session
     async with mcp_session() as s:
         session = s
-        try:  # warm-up: load the model into memory so the first decision is not slow
-            await llm.generate(model=MODEL, prompt="", options=LOAD_OPTS, keep_alive="1h")
-        except Exception as e:
-            print(f"WARNING: Ollama not reachable ({e}). Unity will use its fallback.")
+        await warm_up()
         yield
 
 
 app = FastAPI(lifespan=lifespan)
 
 
+@app.get("/health")
+async def health() -> dict:
+    """Ready = Ollama answers and the model is loaded in memory. If not, loading starts in the background."""
+    global model_ready
+    try:
+        loaded = await asyncio.wait_for(llm.ps(), 1.5)
+        model_ready = any(MODEL in (m.model, getattr(m, "name", None)) for m in loaded.models)
+    except Exception:
+        model_ready = False
+    ensure_warm()
+    return {"ready": model_ready, "model": MODEL}
+
+
 @app.post("/decide")
 async def decide_endpoint(req: dict):
+    global model_ready
     if not isinstance(req.get("stateVersion"), int) or not all(k in req for k in ("npc", "legalActions", "environment", "objective")):
         return JSONResponse({"error": "malformed request"}, status_code=400)
     async with lock:
@@ -231,6 +261,9 @@ async def decide_endpoint(req: dict):
             d = await asyncio.wait_for(decide(session), DECISION_TIMEOUT)
         except Exception as e:   # any failure -> HTTP error -> Unity runs its deterministic fallback
             print(f"decision failed: {type(e).__name__}: {e}")
+            if not isinstance(e, ValueError):   # Ollama down or too slow, not a bad answer: reload the model
+                model_ready = False
+                ensure_warm()
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=503)
     return {"stateVersion": req["stateVersion"], **d}
 

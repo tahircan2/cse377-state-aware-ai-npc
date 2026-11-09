@@ -15,6 +15,12 @@ public class ScenarioLoader : MonoBehaviour
         ("E  Supported Defense", 55, 4, 2, 12, 3, true),
     };
 
+    void Awake()
+    {
+        var player = guard.enemies[0].gameObject;   // enemies[0] is the Player capsule
+        if (!player.GetComponent<PlayerController>()) player.AddComponent<PlayerController>();
+    }
+
     void Start() => Load(0);
 
     public static int Count => Scenarios.Length;
@@ -39,7 +45,7 @@ public class ScenarioLoader : MonoBehaviour
     void OnGUI()
     {
         GUI.Label(new Rect(10, Screen.height - 70, 900, 25),
-            "Yellow = Guard    Blue = Player (enemy)    Red = Enemy    Green = Ally    Grey = Cover");
+            "Yellow = Guard    Blue = Player (enemy, move with WASD)    Red = Enemy    Green = Ally    Grey = Cover");
         for (int i = 0; i < Scenarios.Length; i++)
             if (GUI.Button(new Rect(10 + i * 170, Screen.height - 45, 160, 35), Scenarios[i].name)) Load(i);
         // Same scenario, different personality (PDF §16)

@@ -63,7 +63,10 @@ flowchart TD
 - **Legal actions only:** Unity generates the allowed set (`ATTACK`, `TAKE_COVER`, `RETREAT`, `CALL_FOR_HELP`, `RELOAD`, `HOLD_POSITION`); the model cannot invent new ones.
 - **Structured output:** `{action, confidence, reason}` constrained by a JSON Schema whose `action` enum is the current legal set.
 - **Validation and stale-state protection:** every answer is re-checked against the *current* state and `stateVersion` before execution.
-- **Never blocks the game:** asynchronous requests, 5 s timeout, deterministic fallback; the game stays playable with the AI offline.
+- **Never blocks the game:** asynchronous requests, 8 s timeout, deterministic fallback; the game stays playable with the AI offline.
+- **AI health check:** Unity polls `GET /health`; while the model is not loaded the guard plays on the fallback, and the agent reloads the model by itself after Ollama restarts.
+- **Live play:** move the Player with **WASD**; walking into or out of the enemies' weapon range triggers a new decision.
+- **Evidence on screen:** the HUD shows the current legal actions, the MCP tools used for the last decision and the AI status; the log also stores the raw JSON answer.
 - **Event-driven timing:** decisions on significant state changes or every 3 s, never every frame.
 - **Full decision log:** time, NPC, state, legal actions, MCP tools called, decision, confidence, reason, latency, validation result, executed action.
 - **NPC personalities (optional §16):** Guard, Scout and Assault share state and actions, but receive different goals.
@@ -109,7 +112,8 @@ python agent.py
 Open `UnityProject` in Unity 6, open `Assets/Scenes/NpcScene` and press **Play**.
 
 - The buttons at the bottom load **Scenarios A-E**; the **Role** button switches Guard / Scout / Assault.
-- The HUD shows the guard's state, current action and the last AI decision.
+- **WASD / arrow keys** move the blue Player; the guard's state and decisions follow live.
+- The HUD shows the guard's state, the legal actions right now, the MCP tools of the last decision, the AI status and the last decision.
 - Every decision is appended to `UnityProject/decisions.log`.
 
 If the agent or Ollama is not running, the guard keeps playing on its deterministic fallback.
@@ -133,6 +137,7 @@ If the agent or Ollama is not running, the guard keeps playing on its determinis
         │   ├── GuardNpc.cs              # authoritative state, combat, action executor, roles
         │   ├── NpcBrain.cs              # timing, request, validation, stale check, fallback, logging, HUD
         │   ├── Enemy.cs                 # enemies (and the player) that shoot the guard
+        │   ├── PlayerController.cs      # WASD movement for the Player capsule
         │   └── ScenarioLoader.cs        # Scenario A-E and role buttons
         ├── Editor/
         │   ├── SceneBuilder.cs          # builds NpcScene from primitives
@@ -159,7 +164,7 @@ If the agent or Ollama is not running, the guard keeps playing on its determinis
 
 ## How a decision is made
 
-1. **Trigger:** a significant state change (health band, empty ammo, enemy/ally count, cover), a finished action, or the 3 s timer.
+1. **Trigger:** a significant state change (health band, empty ammo, enemy/ally count, cover, entering or leaving the enemies' weapon range), a finished action, or the 3 s timer. If `/health` reports the model as not ready, the fallback is used instead of a request.
 2. **Request:** Unity sends `stateVersion`, the state projection, the legal actions, environment context and the NPC's objective.
 3. **Tool phase:** the model inspects the MCP tools and calls the ones it needs (bounded to 4 rounds).
 4. **Decision phase:** the model answers in JSON; `action` is restricted to the legal actions by the schema.
@@ -174,6 +179,7 @@ Example log entry:
   State: {"health":89.0,"ammo":10,"maxAmmo":10,"enemyDistance":5.0,"enemyCount":1,"nearbyAllies":1,...}
   Legal actions: ATTACK, TAKE_COVER, RETREAT, CALL_FOR_HELP, HOLD_POSITION
   MCP tools called: get_npc_objective, get_npc_state, get_legal_actions, get_environment_context
+  Raw AI response: {"stateVersion":4,"action":"ATTACK","confidence":0.85,"reason":"High health (89/100) ...",...}
   Decision: ATTACK  Confidence: 0.85  Reason: High health (89/100) and full ammo (10/10) allow for a direct
             engagement against the single enemy at 5m range.
   Latency: 4435 ms  Validation: PASS  Executed: ATTACK
@@ -189,7 +195,7 @@ Example log entry:
 | JSON Schema (Ollama) | `action` is an enum of the current legal actions, so an invented action cannot be generated |
 | Fact check (agent) | A reason that contradicts the data ("low ammo" at 10/10, "outnumbered" at 1 vs 2, wrong side of a range) gets one correction round; if it is still wrong, the decision is rejected |
 | Validation (Unity) | Action must still be legal and `stateVersion` must still match |
-| Fallback (Unity) | Timeout, error or rejection -> `TAKE_COVER` if cover exists, otherwise `RETREAT` |
+| Fallback (Unity) | AI not ready, timeout, error or rejection -> `TAKE_COVER` if cover exists, otherwise `RETREAT` |
 
 The tactical choice itself is left to the model: the system prompt lists tactical *considerations*, not if/else rules.
 
@@ -217,7 +223,8 @@ Terminal test with `bonsai-2:9b` (~2.7-4.5 s per decision):
 Unity.exe -batchmode -projectPath UnityProject -executeMethod PlayModeSmokeTest.Run -logFile smoke.log
 ```
 
-It plays every scenario with every role in real Play mode, then once with the agent unreachable, and writes
+It plays every scenario with every role in real Play mode, moves the Player into the enemies' weapon range
+to check live re-decisions, then runs once with the agent unreachable, and writes
 `UnityProject/smoke_test.txt` (exit code 0 = all checks passed). Last run: 0 errors, every decision made for the
 current state passed validation, stale or failed answers were ignored or replaced by the fallback, and the game
 kept running with the agent offline.

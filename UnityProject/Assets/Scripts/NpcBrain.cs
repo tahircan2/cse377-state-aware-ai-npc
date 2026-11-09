@@ -12,15 +12,20 @@ using static LegalActionGenerator;
 public class NpcBrain : MonoBehaviour
 {
     public string agentUrl = "http://127.0.0.1:8000/decide";
-    public int timeoutSeconds = 5;        // PDF: 2-5 s
+    // PDF §13 suggests 2-5 s as an example. A local 9B model on a 4 GB laptop GPU answers in ~3-4.5 s, so 8 s
+    // keeps normal decisions from falling back when the GPU is also busy (projector, screen recording).
+    // A constant, not an Inspector field: a value saved in the scene would silently override it.
+    const int TimeoutSeconds = 8;
     public float decisionInterval = 3;    // timer-based decision every 3 s ...
     public float minEventGap = 1;         // ... or sooner on an event, but never every frame
+    public float healthCheckInterval = 2;
 
     GuardNpc guard;
-    bool pending;
+    bool pending, aiReady;
+    string aiStatus = "AI: connecting...";
     float lastRequest = -99;
     int lastVersion = -1;
-    string lastDecision = "";
+    string lastDecision = "", lastTools = "-";
     string logPath;
     GUIStyle hud;
 
@@ -32,12 +37,61 @@ public class NpcBrain : MonoBehaviour
         logPath = Path.Combine(Application.dataPath, "..", "decisions.log");
     }
 
+    void Start() => StartCoroutine(HealthLoop());
+
+    // Asks the agent whether the model is loaded. While it is not, the guard plays on the fallback
+    // instead of waiting for requests that would only time out (PDF §13).
+    IEnumerator HealthLoop()
+    {
+        while (true)
+        {
+            using (var www = UnityWebRequest.Get(agentUrl.Replace("/decide", "/health")))
+            {
+                www.timeout = 2;
+                yield return www.SendWebRequest();
+                if (www.result != UnityWebRequest.Result.Success) { aiReady = false; aiStatus = "AI: offline (agent not running) - using fallback"; }
+                else
+                {
+                    aiReady = www.downloadHandler.text.Contains("\"ready\":true");
+                    aiStatus = aiReady ? "AI: ready" : "AI: loading model... - using fallback";
+                }
+            }
+            yield return new WaitForSeconds(healthCheckInterval);
+        }
+    }
+
     void Update()
     {
         if (pending || guard.IsDead || guard.GetState().enemyCount == 0) return;   // no threat, nothing to decide
         float since = Time.time - lastRequest;
         bool gameEvent = guard.StateVersion != lastVersion || guard.ActionFinished;
-        if (since >= decisionInterval || (gameEvent && since >= minEventGap)) StartCoroutine(RequestDecision());
+        if (since < decisionInterval && !(gameEvent && since >= minEventGap)) return;
+        if (aiReady) StartCoroutine(RequestDecision());
+        else DecideOffline();
+    }
+
+    void DecideOffline()
+    {
+        lastRequest = Time.time;
+        lastVersion = guard.StateVersion;
+        guard.ActionFinished = false;
+        var req = BuildRequest();
+        string executed = Fallback();
+        guard.Execute(executed);
+        Log(req, null, "", 0, "SKIPPED (AI not ready)", executed);
+    }
+
+    DecisionRequest BuildRequest()
+    {
+        var state = guard.GetState();
+        return new DecisionRequest
+        {
+            stateVersion = guard.StateVersion,
+            npc = state,
+            legalActions = Generate(state).ToArray(),
+            environment = guard.GetEnvironment(),
+            objective = guard.Objective,
+        };
     }
 
     IEnumerator RequestDecision()
@@ -46,22 +100,14 @@ public class NpcBrain : MonoBehaviour
         lastRequest = Time.time;
         lastVersion = guard.StateVersion;
         guard.ActionFinished = false;
-
-        var state = guard.GetState();
-        var req = new DecisionRequest
-        {
-            stateVersion = guard.StateVersion,
-            npc = state,
-            legalActions = Generate(state).ToArray(),
-            environment = guard.GetEnvironment(),
-            objective = guard.Objective,
-        };
+        var req = BuildRequest();
 
         float t0 = Time.realtimeSinceStartup;
         using var www = UnityWebRequest.Post(agentUrl, JsonUtility.ToJson(req), "application/json");
-        www.timeout = timeoutSeconds;
+        www.timeout = TimeoutSeconds;
         yield return www.SendWebRequest();   // the guard keeps doing its current action meanwhile
         int latency = (int)((Time.realtimeSinceStartup - t0) * 1000);
+        string raw = www.downloadHandler?.text ?? "";
 
         Decision d = null;
         string validation;
@@ -69,7 +115,7 @@ public class NpcBrain : MonoBehaviour
             validation = $"FAIL ({www.error})";
         else
         {
-            try { d = JsonUtility.FromJson<Decision>(www.downloadHandler.text); } catch (ArgumentException) { }
+            try { d = JsonUtility.FromJson<Decision>(raw); } catch (ArgumentException) { }
             validation = Validate(d);
         }
 
@@ -81,7 +127,7 @@ public class NpcBrain : MonoBehaviour
             else if (stale) { executed = null; if (!validation.Contains("stale")) validation += " (state changed meanwhile, ignored)"; }   // keep current behaviour, a fresh decision follows
             else executed = Fallback();
             if (executed != null) guard.Execute(executed);
-            Log(req, d, latency, validation, executed ?? $"{guard.CurrentAction} (kept)");
+            Log(req, d, raw, latency, validation, executed ?? $"{guard.CurrentAction} (kept)");
         }
         pending = false;
     }
@@ -99,7 +145,7 @@ public class NpcBrain : MonoBehaviour
     // get out of the line of fire - into cover if there is any, otherwise away from the enemy (both always legal then).
     string Fallback() => guard.GetState().coverAvailable ? TakeCover : Retreat;
 
-    void Log(DecisionRequest req, Decision d, int latency, string validation, string executed)
+    void Log(DecisionRequest req, Decision d, string raw, int latency, string validation, string executed)
     {
         string tools = d?.toolsCalled == null ? "" : string.Join(", ", d.toolsCalled);
         string entry =
@@ -107,20 +153,24 @@ public class NpcBrain : MonoBehaviour
             $"  State: {JsonUtility.ToJson(req.npc)}  Environment: {JsonUtility.ToJson(req.environment)}\n" +
             $"  Legal actions: {string.Join(", ", req.legalActions)}\n" +
             $"  MCP tools called: {tools}\n" +
+            $"  Raw AI response: {(raw == "" ? "-" : raw)}\n" +
             $"  Decision: {d?.action ?? "-"}  Confidence: {d?.confidence:0.00}  Reason: {d?.reason}{(d != null && d.corrected ? "  (reason corrected once by the agent's fact check)" : "")}\n" +
             $"  Latency: {latency} ms  Validation: {validation}  Executed: {executed}\n";
         Debug.Log(entry);
         File.AppendAllText(logPath, entry + "\n");
+        if (d != null) lastTools = tools;
         lastDecision = $"Last decision: {(d == null ? "-" : $"{d.action} ({d.confidence:0.00})")}  {validation}  {latency} ms  ->  executed {executed}\n{d?.reason}";
     }
 
     void OnGUI()
     {
-        hud ??= new GUIStyle(GUI.skin.box) { fontSize = 15, alignment = TextAnchor.UpperLeft, wordWrap = true, normal = { textColor = Color.white } };
+        hud ??= new GUIStyle(GUI.skin.box) { fontSize = 15, alignment = TextAnchor.UpperLeft, wordWrap = true, normal = { textColor = Color.white }, richText = true };
         var s = guard.GetState();
-        string status = guard.IsDead ? "DEAD" : pending ? "AI thinking..." : "";
-        GUI.Box(new Rect(10, 10, 760, 95),
-            $"{s.npcId} [{guard.Objective.role}]   HP {s.health}   Ammo {s.ammo}   Enemies {(s.enemyCount > 0 ? $"{s.enemyCount} @ {s.enemyDistance} m" : "0")}   Allies {s.nearbyAllies}   Cover {(s.coverAvailable ? "yes" : "no")}\n" +
-            $"Current action: {guard.CurrentAction}   {status}\n{lastDecision}", hud);
+        string status = guard.IsDead ? "DEAD (load a scenario)" : s.enemyCount == 0 ? "no enemy in sight - waiting" : pending ? "AI thinking..." : "";
+        GUI.Box(new Rect(10, 10, 820, 150),
+            $"{s.npcId} [{guard.Objective.role}]   HP {s.health}   Ammo {s.ammo}/{s.maxAmmo}   Enemies {(s.enemyCount > 0 ? $"{s.enemyCount} @ {s.enemyDistance} m" : "0")}   Allies {s.nearbyAllies}   Cover {(s.coverAvailable ? "yes" : "no")}\n" +
+            $"<b>Legal now:</b> {string.Join(", ", Generate(s))}\n" +
+            $"<b>MCP tools (last decision):</b> {lastTools}\n" +
+            $"Current action: {guard.CurrentAction}   {status}   <i>{aiStatus}</i>\n{lastDecision}", hud);
     }
 }

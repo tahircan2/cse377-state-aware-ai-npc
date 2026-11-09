@@ -69,7 +69,9 @@ public class GuardNpc : MonoBehaviour
 
         // New state version only on significant changes (PDF §14), so small ticks don't make every decision stale.
         var s = GetState();
-        string sig = $"{(int)s.health / 20}|{s.ammo == 0}|{s.enemyCount}|{s.nearbyAllies}|{s.alliesCallable}|{s.coverAvailable}";
+        var nearest = NearestEnemy();   // entering or leaving the enemies' weapon range also counts as significant
+        bool inEnemyRange = nearest && Dist(nearest.transform) <= nearest.fireRange;
+        string sig = $"{(int)s.health / 20}|{s.ammo == 0}|{s.enemyCount}|{s.nearbyAllies}|{s.alliesCallable}|{s.coverAvailable}|{inEnemyRange}";
         if (sig != signature) { signature = sig; StateVersion++; }
 
         if (CurrentAction == Attack) Shoot();
